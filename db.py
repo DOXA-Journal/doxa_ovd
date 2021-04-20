@@ -48,14 +48,12 @@ def subscribe(user, flag):
                     upsert=True)
 
 def unsubscribe(user, flag):
-    db.flags.update({'flag': flag},
-                    {'$pull': {'subscribers': uid(user)}},
-                    multi=True)
+    db.flags.update_many({'flag': flag},
+                    {'$pull': {'subscribers': uid(user)}})
 
 def unsubscribe_all(user):
-    db.flags.update(dict(),
-                    {'$set': {'subscribers': []}},
-                    multi=True)
+    db.flags.update_many(dict(),
+                    {'$pull': {'subscribers': uid(user)}})
 
 
 def get_flags(user):
