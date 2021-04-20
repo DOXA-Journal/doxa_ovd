@@ -3,6 +3,8 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Conve
 from telegram import Bot, ReplyKeyboardMarkup, ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.utils.request import Request
 
+from utils import mention, uid_flag
+
 import config
 import db
 
@@ -32,57 +34,60 @@ def hello(update, context):
 Расскажи максимально подробно о ситуации, которая произошла с тобой или твоим знакомым. 
 
 Напиши нам:
-1) Свои ФИО, возраст и контактный телефон. 
-2) Свой университет и твой статус в нем. 
-3) То, что происходит прямо сейчас. Если повязали, расскажи обо всех деталях и о том, применялось ли насилие. Если вдруг есть фото/видео задержания, пришли его нам.
-4) Если ситуация находится на стадии судебного разбирательства, подробно расскажи об этом. 
+1) Свои <u>ФИО</u>, <u>возраст</u> и <u>контактный телефон</u>. 
+2) Свой <u>университет</u> и твой <u>статус</u> в нем. 
+3) То, что происходит прямо сейчас. Если <u>повязали</u>, расскажи обо всех деталях и о том, применялось ли насилие. Если вдруг есть <u>фото/видео</u> задержания, пришли его нам.
+4) Если ситуация находится на стадии <u>судебного разбирательства</u>, подробно расскажи об этом. 
 5) Если есть ещё что-то, что мы должны знать, — рассказывай. 
 
-И ещё: все обязательно будет хорошо!
-""")
+И ещё: <b>все обязательно будет хорошо</b>!
+""",
+    parse_mode=ParseMode.HTML)
+    db.register(update.effective_user)
 
 dp.add_handler(CommandHandler('start', hello))
 
 ## ask operator scenario
 
-# utils
-def mention(op):
-    return f"@{op['username']}" if op['username'] else f"<a href='tg://user?id={op['id']}'>{op['name']}</a>"
+# callback
 
 def mention_operators(flags):
     operators = db.get_subscribers(flags)
     return " ".join(map(mention, operators))
 
-def uid_flag(uid):
-    return f'id{uid}'
-
-def userflag(user):
-    return {'flag': uid_flag(user.id),
-            'comment': '@'+user.username if user.username else f'{user.first_name} {user.last_name}'}
-
-# callback
-
 def forward_to_operators(update, context):
-    # here should be powerful flag machine
-    flags = ['all']
-    new_user = not db.any_questions(update.effective_user)
-    if new_user:
-        flags.append('new')
-        db.add_flag(**userflag(update.effective_user))
-    flags.append(userflag(update.effective_user)['flag'])
-    # then just forward and mention
-    mention = mention_operators(flags)
-    header = bot.send_message(chat_id=config.data.operators_chat,
-                              text=f"<code>[открыт]</code>\n{mention}",
-                              parse_mode=ParseMode.HTML)
+    # forward
     forward = update.message.forward(config.data.operators_chat)
-    # and add question to database
-    db.add_question(update.effective_user, update.message, forward, header)
+    
+    # check thread
+    thread = db.get_thread(update.effective_user.id)
+    if not thread: thread = db.new_thread(update.effective_user)
+
+    # flag machine
+    flags = ['all']
+    flags.append(thread['flag'])
+    if thread['new']: flags.append('new')
+
+    # get subscribers
+    operators = db.get_subscribers(flags)
+    
+    # update ui
+    outdated_header = thread['header_id']
+    if outdated_header: bot.delete_message(chat_id=config.data.operators_chat,
+                                           message_id=outdated_header)
+    mention_text = " ".join(map(mention, operators))
+    header = bot.send_message(chat_id=config.data.operators_chat,
+                              text=f"<code>[открыт]</code>\n{mention_text}",
+                              parse_mode=ParseMode.HTML)
     
     # instant reply
-    update.message.reply_text("Мы получили твоё сообщение и скоро обязательно ответим!")
+    if thread['closed']:
+        update.message.reply_text("Мы получили твоё сообщение и скоро обязательно ответим!")
+    
+    # add question
+    db.add_question(update.effective_user, update.message, forward, header)
 
-dp.add_handler(MessageHandler(PrivateChat, forward_to_operators))
+dp.add_handler(MessageHandler(PrivateChat & ~Filters.command, forward_to_operators))
 
 ## reply to user scenario
 
@@ -99,21 +104,51 @@ ReplyToBotForwardedFilter =  _ReplyToBotForwardedFilter()
         
 def reply_to_user(update, context):
     forwarded = update.message.reply_to_message
-    original = db.original_question(forwarded)
-    sender_id = original['from_user']['id']
-    db.subscribe(update.effective_user, uid_flag(sender_id))
-    answer = bot.send_message(chat_id=sender_id,
-                     text=update.message.text)
-    first_answer = not db.any_answers(forwarded)
-    if first_answer:
+    thread = db.get_thread_by_forward(forwarded)
+    db.subscribe(update.effective_user, thread['flag'])
+    answer = bot.send_message(chat_id=thread['user_id'],
+                              text=update.message.text)
+    if not thread['closed']:
         bot.edit_message_text(chat_id=update.effective_chat.id,
-                          message_id=original['header_id'],
-                          text="<code>[закрыт]</code>",
-                          parse_mode=ParseMode.HTML)
-    db.add_answer(forwarded, answer)
-    
+                              message_id=thread['header_id'],
+                              text="<code>[закрыт]</code>",
+                              parse_mode=ParseMode.HTML)
+    db.add_answer(forwarded, answer, thread['user_id'])
+
 
 dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat, reply_to_user))
+
+## subscription management
+
+def send_subscriptions(update):
+    flags = db.get_flags(update.effective_user)
+    flag_repr = lambda f: f"<code>{f['flag']}</code>"
+    flags_text = [flag_repr(f) + (f" ({f['comment']})" if f.get('comment') else "") for f in flags]
+    update.message.reply_text("<b>Текущие подписки:</b>\n" + "\n".join(flags_text) if flags_text else "<b>Нет текущих подписок</b>", parse_mode=ParseMode.HTML)
+
+def subscribe(update, context):
+    flags = update.message.text.split()[1:]
+    for flag in flags:
+        db.subscribe(update.effective_user, flag)
+    return send_subscriptions(update)
+
+def unsubscribe(update, context):
+    flags = update.message.text.split()[1:]
+    for flag in flags:
+        db.unsubscribe(update.effective_user, flag)
+    return send_subscriptions(update)
+
+def unsubscribe_all(update, context):
+    db.unsubscribe_all(update.effective_user)
+    return send_subscriptions(update)
+
+def check_subscriptions(update, context):
+    return send_subscriptions(update)
+
+dp.add_handler(CommandHandler('subscribe', subscribe, filters=OperatorsChat))
+dp.add_handler(CommandHandler('unsubscribe', unsubscribe, filters=OperatorsChat))
+dp.add_handler(CommandHandler('unsubscribe_all', unsubscribe, filters=OperatorsChat))
+dp.add_handler(CommandHandler('subscriptions', check_subscriptions, filters=OperatorsChat))
 
 ## admin tools
 
@@ -130,40 +165,50 @@ def pretty_single(d):
 def pretty(seq):
     return "\n\n".join(map(pretty_single, seq))
 
-# commands
-
-def send_subscriptions(update):
-    flags = db.get_flags(update.effective_user)
-    print(flags)
-    flag_repr = lambda f: f"<code>{f['flag']}</code>"
-    flags_text = [flag_repr(f) + (f" ({f['comment']})" if f.get('comment') else "") for f in flags]
-    update.message.reply_text("<b>Текущие подписки:</b>\n" + "\n".join(flags_text), parse_mode=ParseMode.HTML)
-
-def subscribe(update, context):
-    flags = update.message.text.split()[1:]
-    for flag in flags:
-        db.subscribe(update.effective_user, flag)
-    send_subscriptions(update)
-
-def unsubscribe(update, context):
-    flags = update.message.text.split()[1:]
-    for flag in flags:
-        db.unsubscribe(update.effective_user, flag)
-    send_subscriptions(update)
-
-def check_subscriptions(update, context):
-    return send_subscriptions(update)
-
-dp.add_handler(CommandHandler('subscribe', subscribe, filters=OperatorsChat))
-dp.add_handler(CommandHandler('unsubscribe', unsubscribe, filters=OperatorsChat))
-dp.add_handler(CommandHandler('subscriptions', check_subscriptions, filters=OperatorsChat))
-
 # utils
 
 def say_chat_id(update, context):
     update.message.reply_text(update.message.chat_id)
 
-dp.add_handler(CommandHandler('chatid', say_chat_id))
+#dp.add_handler(CommandHandler('chatid', say_chat_id))
+
+
+# broadcast
+
+def broadcast(text):
+    for user_id in db.user_ids():
+        try:
+            bot.send_message(chat_id=user_id,
+                             text=text)
+        except:
+            time.sleep(1)
+            try:
+                bot.send_message(chat_id=user_id,
+                                 text=text)
+            except:
+                pass
+
+
+BROADCAST_INPUT = 'binput'
+
+def broadcast_start(update, context):
+    update.message.reply_text("Введите текст для распространения:")
+    return BROADCAST_INPUT
+
+def broadcast_share_input(update, context):
+    broadcast(update.message.text)
+    return ConversationHandler.END
+
+dp.add_handler(ConversationHandler(
+    entry_points=[CommandHandler('broadcast', broadcast_start, filters=AdminChat)],
+
+    states={
+       BROADCAST_INPUT: [MessageHandler(Filters.text & ~Filters.command, broadcast_share_input)]
+    },
+
+    fallbacks = [CommandHandler('cancel', lambda u,c: ConversationHandler.END)]
+))
+
 
 # error logging
 
