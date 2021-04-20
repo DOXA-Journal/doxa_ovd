@@ -81,8 +81,13 @@ def add_question(user, message, forward, header):
 def original_question(forward):
     return db.questions.find_one({'forward_id': forward.message_id})
 
+def any_answers(forward):
+    q = db.questions.find_one({'forward_id': forward.message_id})
+    return q and bool(q.get('answers'))
+
 def add_answer(forward, answer):
-    db.questions.update_one({'forward_id': forward.message_id},
+    res = db.questions.update_one({'forward_id': forward.message_id},
                             {'$push': {'answers': {'text': answer.text,
                                                    'time': timestamp(),
-                                                   'operator': answer.effective_user.username}}})
+                                                   'operator': answer.from_user.username}}})
+    print(res)

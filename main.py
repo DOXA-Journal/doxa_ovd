@@ -102,12 +102,16 @@ def reply_to_user(update, context):
     original = db.original_question(forwarded)
     sender_id = original['from_user']['id']
     db.subscribe(update.effective_user, uid_flag(sender_id))
-    bot.send_message(chat_id=sender_id,
+    answer = bot.send_message(chat_id=sender_id,
                      text=update.message.text)
-    bot.edit_message_text(chat_id=update.effective_chat.id,
+    first_answer = not db.any_answers(forwarded)
+    if first_answer:
+        bot.edit_message_text(chat_id=update.effective_chat.id,
                           message_id=original['header_id'],
                           text="<code>[закрыт]</code>",
                           parse_mode=ParseMode.HTML)
+    db.add_answer(forwarded, answer)
+    
 
 dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat, reply_to_user))
 
