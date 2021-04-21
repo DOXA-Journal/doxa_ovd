@@ -2,7 +2,7 @@ from pymongo import MongoClient
 
 import config
 
-from utils import uid_flag, comment
+from utils import uid_flag, comment, flagrepr
 
 from datetime import datetime, timedelta
 
@@ -41,14 +41,25 @@ def user_ids():
 
 # flags
 
-def subscribe(user, flag):
+def subscribe(user, flag, flag_repr=None):
     db.flags.update_one(
                     {'flag': flag},
-                    {'$push': {'subscribers': userinfo(user)}},
+                    {'$push': {'subscribers': userinfo(user)},
+                     '$set': {'flag_repr': flag_repr or flag}},
                     upsert=True)
 
+
+def subscribe_thread(user, thread):
+    db.flags.update_one(
+        {'flag': thread['flag']},
+        {'$set': {'flag_repr': thread['flag_repr'],
+                  'comment': thread['user_comment']},
+         '$push': {'subscribers': userinfo(user)}},
+        upsert=True
+    )
+
 def unsubscribe(user, flag):
-    db.flags.update_many({'flag': flag},
+    db.flags.update_many({'$or': [{'flag': flag}, {'flag_repr': flag}]},
                     {'$pull': {'subscribers': uid(user)}})
 
 def unsubscribe_all(user):
@@ -62,25 +73,12 @@ def get_flags(user):
 
 def get_subscribers(flags):
     d = dict()
-    for f in db.flags.find({'flag': {'$in': flags}}):
+    for f in db.flags.find({'$or': [{'flag': {'$in': flags}}, {'flag_repr': {'$in': flags}}]}):
         for s in f['subscribers']:
             d[s['id']] = s
     return list(d.values())
 
 # threads (questions/answers)
-
-def new_thread(user):
-    flag = uid_flag(user.id)
-    db.flags.insert({'flag': flag,
-                     'comment': comment(user),
-                     'subscribers': []})
-    t = {'flag': uid_flag(user.id),
-         'user_id': user.id,
-         'new': True,
-         'header_id': None,
-         'closed': True}
-    db.threads.insert_one(t)
-    return t
 
 
 def add_question(user, message, forward, header):
@@ -91,7 +89,10 @@ def add_question(user, message, forward, header):
     db.threads.update_one({'flag': uid_flag(user.id)},
                             {'$push': {'questions': q},
                              '$set':
-                                { 'header_id': header.message_id,
+                                { 'user_id': user.id,
+                                  'flag_repr': flagrepr(user),
+                                  'user_comment': comment(user),
+                                  'header_id': header.message_id,
                                   'closed': False }
                             },
                             upsert=True)
@@ -110,5 +111,5 @@ def add_answer(forward, answer, to_user_id):
          'id': answer.message_id}
     db.threads.update({'user_id': to_user_id},
                       {'$push': {'answers': a},
-                       '$set': {'closed': True ,
+                       '$set': {'closed': True,
                                 'new': False}})

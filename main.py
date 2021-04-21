@@ -3,7 +3,7 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Conve
 from telegram import Bot, ReplyKeyboardMarkup, ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.utils.request import Request
 
-from utils import mention, uid_flag
+from utils import mention, uid_flag, flagrepr
 
 import config
 import db
@@ -61,28 +61,34 @@ def forward_to_operators(update, context):
     
     # check thread
     thread = db.get_thread(update.effective_user.id)
-    if not thread: thread = db.new_thread(update.effective_user)
+
+    # instant reply
+    if not thread or thread.get('closed'):
+        update.message.reply_text("Мы получили твоё сообщение и скоро обязательно ответим!")
 
     # flag machine
-    flags = ['all']
-    flags.append(thread['flag'])
-    if thread['new']: flags.append('new')
+    flags = list()
+    flags.append('открыто')
+    if not thread: flags.append('впервые')
+    flags.append(flagrepr(update.effective_user))
 
     # get subscribers
     operators = db.get_subscribers(flags)
     
     # update ui
-    outdated_header = thread['header_id']
-    if outdated_header: bot.delete_message(chat_id=config.data.operators_chat,
-                                           message_id=outdated_header)
+    outdated_header = thread['header_id'] if thread else None
+    if outdated_header and not thread['closed']:
+        try:
+            bot.delete_message(chat_id=config.data.operators_chat,
+                               message_id=outdated_header)
+        except:
+            pass
+    tags = map(lambda s: "#"+s, flags)
+    tag_text = ' '.join(tags)
     mention_text = " ".join(map(mention, operators))
     header = bot.send_message(chat_id=config.data.operators_chat,
-                              text=f"<code>[открыт]</code>\n{mention_text}",
+                              text=f"[ {tag_text} ]\n{mention_text}",
                               parse_mode=ParseMode.HTML)
-    
-    # instant reply
-    if thread['closed']:
-        update.message.reply_text("Мы получили твоё сообщение и скоро обязательно ответим!")
     
     # add question
     db.add_question(update.effective_user, update.message, forward, header)
@@ -105,14 +111,13 @@ ReplyToBotForwardedFilter =  _ReplyToBotForwardedFilter()
 def reply_to_user(update, context):
     forwarded = update.message.reply_to_message
     thread = db.get_thread_by_forward(forwarded)
-    db.subscribe(update.effective_user, thread['flag'])
+    db.subscribe_thread(update.effective_user, thread)
     answer = bot.send_message(chat_id=thread['user_id'],
                               text=update.message.text)
     if not thread['closed']:
         bot.edit_message_text(chat_id=update.effective_chat.id,
                               message_id=thread['header_id'],
-                              text="<code>[закрыт]</code>",
-                              parse_mode=ParseMode.HTML)
+                              text=f"[ #{thread.get('flag_repr')} ]")
     db.add_answer(forwarded, answer, thread['user_id'])
 
 
@@ -120,21 +125,24 @@ dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat, reply_t
 
 ## subscription management
 
+def parse_flags(text):
+    return map(lambda s: s.lstrip('@#'), filter(lambda s: not s.startswith("/"), text.split()))
+
+
 def send_subscriptions(update):
     flags = db.get_flags(update.effective_user)
-    flag_repr = lambda f: f"<code>{f['flag']}</code>"
-    flags_text = [flag_repr(f) + (f" ({f['comment']})" if f.get('comment') else "") for f in flags]
+    view_flag = lambda f: f.get('flag_repr') or f.get('flag')
+    view_comment = lambda f: f" ({f.get('comment')})" if f.get('comment') else ""
+    flags_text = [f"#{view_flag(f)}{view_comment(f)}" for f in flags]
     update.message.reply_text("<b>Текущие подписки:</b>\n" + "\n".join(flags_text) if flags_text else "<b>Нет текущих подписок</b>", parse_mode=ParseMode.HTML)
 
 def subscribe(update, context):
-    flags = update.message.text.split()[1:]
-    for flag in flags:
+    for flag in parse_flags(update.message.text):
         db.subscribe(update.effective_user, flag)
     return send_subscriptions(update)
 
 def unsubscribe(update, context):
-    flags = update.message.text.split()[1:]
-    for flag in flags:
+    for flag in parse_flags(update.message.text):
         db.unsubscribe(update.effective_user, flag)
     return send_subscriptions(update)
 

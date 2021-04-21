@@ -6,3 +6,6 @@ def uid_flag(uid):
 
 def comment(user):
     return '@'+user.username if user.username else f'{user.first_name} {user.last_name}'
+
+def flagrepr(user):
+    return user.username if user.username else uid_flag(user.id)
