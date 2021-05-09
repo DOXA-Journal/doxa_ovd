@@ -167,13 +167,12 @@ dp.add_handler(CommandHandler('subscriptions', check_subscriptions, filters=Oper
 def say_chat_id(update, context):
     update.message.reply_text(update.message.chat_id)
 
-#dp.add_handler(CommandHandler('chatid', say_chat_id))
-
-
 def test_error(update, context):
     raise TelegramError('Test Error')
 
-dp.add_handler(CommandHandler('test_error', test_error))
+def dev_features():
+    dp.add_handler(CommandHandler('chatid', say_chat_id))
+    dp.add_handler(CommandHandler('test_error', test_error))
 
 # utils
 
@@ -260,4 +259,5 @@ def main():
     upd.idle()
 
 if __name__ == '__main__':
+    if config.data.dev: dev_features()
     main()
