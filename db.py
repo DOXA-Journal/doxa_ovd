@@ -116,3 +116,9 @@ def add_answer(forward, answer, to_user_id):
                       {'$push': {'answers': a},
                        '$set': {'closed': True,
                                 'new': False}})
+
+
+def close_thread(thread):
+    db.threads.update({'user_id': thread['user_id']},
+                      {'$set': {'closed': True,
+                                'new': False}})

@@ -125,6 +125,19 @@ def reply_to_user(update, context):
 
 dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat, reply_to_user))
 
+# close comamnd 
+
+def close_thread(update, context):
+    forwarded = update.message.reply_to_message
+    thread = db.get_thread_by_forward(forwarded)
+    if not thread['closed']:
+        bot.edit_message_text(chat_id=update.effective_chat.id,
+                              message_id=thread['header_id'],
+                              text=f"[ #{thread.get('flag_repr')} ]")
+        db.close_thread(thread)
+
+dp.add_handler(CommandHandler('close', close_thread, filters=OperatorsChat))
+
 ## subscription management
 
 def parse_flags(text):
