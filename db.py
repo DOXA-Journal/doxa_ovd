@@ -100,6 +100,9 @@ def add_question(user, message, forward, header):
 def get_thread(user_id):
     return db.threads.find_one({'user_id': user_id})
 
+def get_thread_by_userflag(flag):
+    return db.threads.find_one({'flag_repr': flag})
+
 def get_thread_by_forward(forward):
     return db.threads.find_one({'questions': {'$elemMatch': {'forward_id': forward.message_id}}})
 

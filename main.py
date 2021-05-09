@@ -2,6 +2,7 @@
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackQueryHandler, MessageFilter
 from telegram import Bot, ReplyKeyboardMarkup, ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.utils.request import Request
+from telegram.error import TelegramError
 
 from utils import mention, uid_flag, flagrepr
 
@@ -114,6 +115,7 @@ def reply_to_user(update, context):
     db.subscribe_thread(update.effective_user, thread)
     answer = bot.send_message(chat_id=thread['user_id'],
                               text=update.message.text)
+    # update ui
     if not thread['closed']:
         bot.edit_message_text(chat_id=update.effective_chat.id,
                               message_id=thread['header_id'],
@@ -160,7 +162,20 @@ dp.add_handler(CommandHandler('subscriptions', check_subscriptions, filters=Oper
 
 ## admin tools
 
-# info
+# setup / testing
+
+def say_chat_id(update, context):
+    update.message.reply_text(update.message.chat_id)
+
+#dp.add_handler(CommandHandler('chatid', say_chat_id))
+
+
+def test_error(update, context):
+    raise TelegramError('Test Error')
+
+dp.add_handler(CommandHandler('test_error', test_error))
+
+# utils
 
 import json
 
@@ -173,13 +188,16 @@ def pretty_single(d):
 def pretty(seq):
     return "\n\n".join(map(pretty_single, seq))
 
-# utils
+# info
 
-def say_chat_id(update, context):
-    update.message.reply_text(update.message.chat_id)
+def thread_info(update, context):
+    flag = update.effective_message.text.split()[1]
+    thread = db.get_thread_by_userflag(flag)
+    update.message.reply_text(f"<code>{pretty_single(thread)}</code>",
+                              parse_mode=ParseMode.HTML)
 
-#dp.add_handler(CommandHandler('chatid', say_chat_id))
-
+dp.add_handler(CommandHandler('thread', thread_info, filters=AdminChat))
+    
 
 # broadcast
 
@@ -222,9 +240,9 @@ dp.add_handler(ConversationHandler(
 
 def report_error(update, context):
     bot.send_message(chat_id=config.data.admin_chat,
-        text=f"Error: `{context.error}`\n" +
-             f"Update: ```\n{update}\n```",
-        parse_mode=ParseMode.MARKDOWN_V2)
+        text=f"<code>{type(context.error).__name__}</code> : {context.error}\n\n" +
+             f"<code>\n{pretty_single(update.to_dict())}\n</code>",
+        parse_mode=ParseMode.HTML)
 
 def handle_error(update, context):
     if update.effective_message:
