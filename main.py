@@ -123,7 +123,7 @@ def reply_to_user(update, context):
     db.add_answer(forwarded, answer, thread['user_id'])
 
 
-dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat, reply_to_user))
+dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat & ~Filters.command, reply_to_user))
 
 # close comamnd 
 
