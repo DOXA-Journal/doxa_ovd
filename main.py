@@ -241,11 +241,11 @@ dp.add_handler(ConversationHandler(
 def report_error(update, context):
     bot.send_message(chat_id=config.data.admin_chat,
         text=f"<code>{type(context.error).__name__}</code> : {context.error}\n\n" +
-             f"<code>\n{pretty_single(update.to_dict())}\n</code>",
+             f"<code>\n{pretty_single(update.to_dict() if update else None)}\n</code>",
         parse_mode=ParseMode.HTML)
 
 def handle_error(update, context):
-    if update.effective_message:
+    if update and update.effective_message:
         update.effective_message.reply_text("При обработке этого запроса в боте произошла ошибка. "+
         "Разработчики уже уведомлены!")
     report_error(update, context)
