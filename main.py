@@ -130,6 +130,7 @@ dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat & ~Filte
 def close_thread(update, context):
     forwarded = update.message.reply_to_message
     thread = db.get_thread_by_forward(forwarded)
+    db.unsubscribe(update.effective_user, thread['flag'])
     if not thread['closed']:
         bot.edit_message_text(chat_id=update.effective_chat.id,
                               message_id=thread['header_id'],
