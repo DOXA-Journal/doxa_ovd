@@ -113,14 +113,13 @@ def reply_to_user(update, context):
     forwarded = update.message.reply_to_message
     thread = db.get_thread_by_forward(forwarded)
     db.subscribe_thread(update.effective_user, thread)
-    answer = bot.send_message(chat_id=thread['user_id'],
-                              text=update.message.text)
+    answer_id = update.message.copy(chat_id=thread['user_id'])
     # update ui
     if not thread['closed']:
         bot.edit_message_text(chat_id=update.effective_chat.id,
                               message_id=thread['header_id'],
                               text=f"[ #{thread.get('flag_repr')} ]")
-    db.add_answer(forwarded, answer, thread['user_id'])
+    db.add_answer(forwarded, update.message, thread['user_id'])
 
 
 dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat & ~Filters.command, reply_to_user))
