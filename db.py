@@ -84,6 +84,7 @@ def get_subscribers(flags):
 def add_question(user, message, forward, header):
     q = {'from_user': uid(user),
          'time': timestamp(),
+         'origin_id': message.message_id,
          'content': message.text,
          'forward_id': [forward.message_id]}
     db.threads.update_one({'flag': uid_flag(user.id)},

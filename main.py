@@ -21,6 +21,8 @@ OperatorsChat = Filters.chat(config.data.operators_chat)
 AdminChat = Filters.chat(config.data.admin_chat)
 PrivateChat = Filters.chat_type.private
 
+NormalMessage = ~Filters.command & ~Filters.update.edited_message
+
 # logging
 import logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -94,7 +96,15 @@ def forward_to_operators(update, context):
     # add question
     db.add_question(update.effective_user, update.message, forward, header)
 
-dp.add_handler(MessageHandler(PrivateChat & ~Filters.command, forward_to_operators))
+dp.add_handler(MessageHandler(PrivateChat & NormalMessage, forward_to_operators))
+
+def edited_not_allowed(update, context):
+    bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Бот не может отредактировать сообщения! Отправьте ваши уточнения отдельным сообщением"
+    )
+
+dp.add_handler(MessageHandler(PrivateChat & Filters.update.edited_message, edited_not_allowed))
 
 ## reply to user scenario
 
@@ -122,7 +132,7 @@ def reply_to_user(update, context):
     db.add_answer(forwarded, update.message, thread['user_id'])
 
 
-dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat & ~Filters.command, reply_to_user))
+dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat & NormalMessage, reply_to_user, edited_updates=False))
 
 # close comamnd 
 
