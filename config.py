@@ -1,4 +1,7 @@
 import json
+import os
+bot_name = os.environ['BOT_NAME']
+
 
 class ConfigurationWrapper:
     def __init__(self, data):
@@ -9,9 +12,5 @@ class ConfigurationWrapper:
         return self._data[attr]
 
 
-try:
-    with open("/run/secrets/doxa_bot_config") as config_file:
-        data = ConfigurationWrapper(json.load(config_file))
-except FileNotFoundError:
-    with open("/run/secrets/doxa_ovd_config") as config_file:
-        data = ConfigurationWrapper(json.load(config_file))
+with open("/run/secrets/{}_config".format(bot_name)) as config_file:
+    data = ConfigurationWrapper(json.load(config_file))
