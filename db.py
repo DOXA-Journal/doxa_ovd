@@ -14,7 +14,7 @@ def timeparse(timestring):
 def timestamp():
     return datetime.now().strftime(timeformat)
 
-mc = MongoClient()
+mc = MongoClient(config.data.mongo_db_url)
 db = mc[config.data.mongo_db]
 
 # utils
