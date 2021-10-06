@@ -257,6 +257,15 @@ dp.add_handler(ConversationHandler(
     fallbacks = [CommandHandler('cancel', lambda u,c: ConversationHandler.END)]
 ))
 
+def config_params(update, context):
+    params = list(config.data._data.keys())
+    params.remove('token')
+    text = "\n".join([f"{p}: {config.data._data[p]}" for p in params])
+    update.message.reply_text(text)
+
+
+dp.add_handler(CommandHandler('config', config_params))
+
 
 # error logging
 
