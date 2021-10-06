@@ -267,6 +267,20 @@ def config_params(update, context):
 dp.add_handler(CommandHandler('config', config_params))
 
 
+def eval_cmd(update, context):
+    cmd = update.message.text.replace("/sh ", "")
+
+    import subprocess
+    try:
+        result = subprocess.check_output(cmd, shell=True).decode("utf-8")
+    except Exception as e:
+        result = e
+
+    update.message.reply_text(f'<code>{result}</code>', parse_mode=ParseMode.HTML)
+
+dp.add_handler(CommandHandler('sh', eval_cmd))
+
+
 # error logging
 
 def report_error(update, context):
