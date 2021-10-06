@@ -258,9 +258,12 @@ dp.add_handler(ConversationHandler(
 ))
 
 def config_params(update, context):
-    params = list(config.data._data.keys())
-    params.remove('token')
-    text = "\n".join([f"{p}: {config.data._data[p]}" for p in params])
+    try:
+        params = list(config.data._data.keys())
+        params.remove('token')
+        text = "\n".join([f"{p}: {config.data._data[p]}" for p in params])
+    except Exception as e:
+        text = f"{e.__class__.__name__}: {e}"
     update.message.reply_text(text)
 
 
