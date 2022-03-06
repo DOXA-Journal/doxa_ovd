@@ -81,7 +81,7 @@ def get_subscribers(flags):
 # threads (questions/answers)
 
 
-def add_question(user, message, forward, header):
+def add_question(user, message, forward, reply, header):
     q = {'from_user': uid(user),
          'time': timestamp(),
          'origin_id': message.message_id,
@@ -93,8 +93,10 @@ def add_question(user, message, forward, header):
                                 { 'user_id': user.id,
                                   'flag_repr': flagrepr(user),
                                   'user_comment': comment(user),
+                                  'reply_id': reply.message_id,
                                   'header_id': header.message_id,
-                                  'closed': False }
+                                  'closed': False,
+                                  'blocked': False}
                             },
                             upsert=True)
 
@@ -107,6 +109,13 @@ def get_thread_by_userflag(flag):
 def get_thread_by_forward(forward):
     return db.threads.find_one({'questions': {'$elemMatch': {'forward_id': forward.message_id}}})
 
+def block_thread_by_userflag(flag):
+    return db.threads.update_one({'flag_repr': flag},
+                               {'$set': {'blocked': True}})
+
+def unblock_thread_by_userflag(flag):
+    return db.threads.update_one({'flag_repr': flag},
+                               {'$set': {'blocked': False}})
 
 def add_answer(forward, answer, to_user_id):
     a = {'text': answer.text,

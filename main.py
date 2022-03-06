@@ -59,15 +59,20 @@ def mention_operators(flags):
     return " ".join(map(mention, operators))
 
 def forward_to_operators(update, context):
-    # forward
-    forward = update.message.forward(config.data.operators_chat)
-    
+
     # check thread
     thread = db.get_thread(update.effective_user.id)
 
-    # instant reply
-    if not thread or thread.get('closed'):
-        update.message.reply_text("Мы получили твоё сообщение и скоро обязательно ответим!")
+    # check block
+    if thread and thread.get('blocked'):
+        try:
+            update.message.reply_text("Вы заблокированы")
+        except:
+            pass
+        return
+
+    # forward / block
+    forward = update.message.forward(config.data.operators_chat)
 
     # flag machine
     flags = list()
@@ -79,7 +84,16 @@ def forward_to_operators(update, context):
     operators = db.get_subscribers(flags)
     
     # update ui
-    outdated_header = thread['header_id'] if thread else None
+    outdated_reply = thread.get('reply_id') if thread else None
+    if outdated_reply:
+        try:
+            bot.delete_message(chat_id=update.effective_user.id,
+                               message_id=outdated_reply)
+        except:
+            pass
+    reply = update.message.reply_text("Мы получили твоё сообщение и скоро обязательно ответим!")
+
+    outdated_header = thread.get('header_id') if thread else None
     if outdated_header and not thread['closed']:
         try:
             bot.delete_message(chat_id=config.data.operators_chat,
@@ -94,7 +108,7 @@ def forward_to_operators(update, context):
                               parse_mode=ParseMode.HTML)
     
     # add question
-    db.add_question(update.effective_user, update.message, forward, header)
+    db.add_question(update.effective_user, update.message, forward, reply, header)
 
 dp.add_handler(MessageHandler(PrivateChat & NormalMessage, forward_to_operators))
 
@@ -133,6 +147,54 @@ def reply_to_user(update, context):
 
 
 dp.add_handler(MessageHandler(ReplyToBotForwardedFilter & OperatorsChat & NormalMessage, reply_to_user, edited_updates=False))
+
+
+# block/unblock features
+
+def block_thread_by_reply(update, context):
+    forwarded = update.message.reply_to_message
+    thread = db.get_thread_by_forward(forwarded)
+    flag = thread['flag_repr']
+    db.block_thread_by_userflag(flag)
+    update.message.reply_text(f"#{flag} заблокирован. Используйте команду <code>/unblock #{flag}</code> для разблокировки", parse_mode=ParseMode.HTML)
+
+def unblock_thread(update, context):
+    for flag in parse_flags(update.message.text):
+        db.unblock_thread_by_userflag(flag)
+    update.message.reply_text("Разблокировано")
+
+
+dp.add_handler(CommandHandler('block', block_thread_by_reply, filters=ReplyToBotForwardedFilter & OperatorsChat))
+dp.add_handler(CommandHandler('unblock', unblock_thread, filters=OperatorsChat | AdminChat))
+
+
+# clean feature
+
+def _clean(thread):
+    if not thread or not thread.get('questions'): return
+    for q in thread['questions']:
+        for fwd_id in q['forward_id']:
+            try:
+                bot.delete_message(chat_id=config.data.operators_chat, message_id=fwd_id)
+            except:
+                pass # could not delete message by some reason, ignore
+    bot.delete_message(chat_id=config.data.operators_chat, message_id=thread['header_id'])
+    bot.send_message(chat_id=config.data.operators_chat, text=f"#{thread['flag_repr']} очищен")
+
+def clean_by_reply(update, context):
+    forwarded = update.message.reply_to_message
+    thread = db.get_thread_by_forward(forwarded)
+    _clean(thread)
+
+def clean_thread(update, context):
+    for flag in parse_flags(update.message.text):
+        thread = db.get_thread_by_userflag(flag)
+        _clean(thread)
+
+
+dp.add_handler(CommandHandler('clean', clean_by_reply, filters=ReplyToBotForwardedFilter & OperatorsChat))
+dp.add_handler(CommandHandler('clean', clean_thread, filters=OperatorsChat | AdminChat))
+
 
 # close comamnd 
 
